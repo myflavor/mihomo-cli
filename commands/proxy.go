@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -44,42 +45,46 @@ type MihomoConfig struct {
 	Secret             string `yaml:"secret"`
 }
 
+var (
+	configCache     *MihomoConfig
+	configCacheOnce sync.Once
+)
+
 func getMihomoConfig() (*MihomoConfig, error) {
-	mihomoDir := filepath.Join(getCliDir(), "mihomo")
-	configPath := filepath.Join(mihomoDir, "config.yaml")
+	var err error
+	configCacheOnce.Do(func() {
+		mihomoDir := filepath.Join(getCliDir(), "mihomo")
+		configPath := filepath.Join(mihomoDir, "config.yaml")
 
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config: %w", err)
-	}
+		data, readErr := os.ReadFile(configPath)
+		if readErr != nil {
+			err = fmt.Errorf("failed to read config: %w", readErr)
+			return
+		}
 
-	var cfg MihomoConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config: %w", err)
-	}
+		var cfg MihomoConfig
+		if parseErr := yaml.Unmarshal(data, &cfg); parseErr != nil {
+			err = fmt.Errorf("failed to parse config: %w", parseErr)
+			return
+		}
 
-	return &cfg, nil
+		configCache = &cfg
+	})
+	return configCache, err
 }
 
 func getAPIAddr() string {
 	cfg, err := getMihomoConfig()
-	if err != nil {
+	if err != nil || cfg.ExternalController == "" {
 		return "127.0.0.1:9090"
 	}
-
-	addr := cfg.ExternalController
-	if addr == "" {
-		return "127.0.0.1:9090"
-	}
-
-	// Replace 0.0.0.0 with 127.0.0.1
-	addr = strings.ReplaceAll(addr, "0.0.0.0", "127.0.0.1")
+	addr := strings.ReplaceAll(cfg.ExternalController, "0.0.0.0", "127.0.0.1")
 	return addr
 }
 
 func getAPISecret() string {
 	cfg, err := getMihomoConfig()
-	if err != nil || cfg.Secret == "" {
+	if err != nil || cfg == nil {
 		return ""
 	}
 	return cfg.Secret
@@ -128,51 +133,86 @@ func runProxyList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no proxies data in response")
 	}
 
-	// Sort keys for consistent output
-	keys := make([]string, 0, len(proxies))
-	for k := range proxies {
-		keys = append(keys, k)
+	// Collect groups
+	type proxyGroup struct {
+		name  string
+		ptype string
+		now   string
+		items []string
 	}
-	sort.Strings(keys)
+	var groups []proxyGroup
 
-	for _, name := range keys {
-		info := proxies[name].(map[string]interface{})
-
-		// Only show groups (have "all" field) and skip built-in
+	for name, info := range proxies {
 		if name == "DIRECT" || name == "REJECT" || name == "GLOBAL" || name == "PASS" {
 			continue
 		}
-
-		allProxies, isGroup := info["all"].([]interface{})
+		infoMap := info.(map[string]interface{})
+		allProxies, isGroup := infoMap["all"].([]interface{})
 		if !isGroup {
 			continue
 		}
-
-		ptype := info["type"]
 		now := ""
-		if n, ok := info["now"].(string); ok {
+		if n, ok := infoMap["now"].(string); ok {
 			now = n
 		}
-		fmt.Printf("%s (%s)\n", name, ptype)
-
+		items := make([]string, 0, len(allProxies))
 		for _, p := range allProxies {
-			pName := p.(string)
-			mark := ""
-			if pName == now {
-				mark = " *"
-			}
+			items = append(items, p.(string))
+		}
+		groups = append(groups, proxyGroup{name, infoMap["type"].(string), now, items})
+	}
 
-			// Skip delay check for DIRECT and REJECT
-			if pName == "DIRECT" || pName == "REJECT" {
-				fmt.Printf("  - %s%s\n", pName, mark)
+	sort.Slice(groups, func(i, j int) bool { return groups[i].name < groups[j].name })
+
+	// Concurrent delay check
+	type delayResult struct {
+		name  string
+		delay int
+	}
+	results := make(chan delayResult, 100)
+	var wg sync.WaitGroup
+
+	for _, g := range groups {
+		for _, item := range g.items {
+			if item == "DIRECT" || item == "REJECT" {
 				continue
 			}
+			wg.Add(1)
+			go func(name string) {
+				defer wg.Done()
+				delay := getProxyDelayWithUrl(name)
+				results <- delayResult{name, delay}
+			}(item)
+		}
+	}
 
-			delay := getProxyDelay(pName)
-			if delay > 0 {
-				fmt.Printf("  - %s (%dms)%s\n", pName, delay, mark)
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	delayMap := make(map[string]int)
+	for r := range results {
+		delayMap[r.name] = r.delay
+	}
+
+	// Print results
+	for _, g := range groups {
+		fmt.Printf("%s (%s)\n", g.name, g.ptype)
+		for _, item := range g.items {
+			mark := ""
+			if item == g.now {
+				mark = " *"
+			}
+			if item == "DIRECT" || item == "REJECT" {
+				fmt.Printf("  - %s%s\n", item, mark)
 			} else {
-				fmt.Printf("  - %s (--)%s\n", pName, mark)
+				delay := delayMap[item]
+				if delay > 0 {
+					fmt.Printf("  - %s (%dms)%s\n", item, delay, mark)
+				} else {
+					fmt.Printf("  - %s (--)%s\n", item, mark)
+				}
 			}
 		}
 	}
@@ -180,8 +220,8 @@ func runProxyList(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func getProxyDelay(name string) int {
-	// Get proxy info to check for custom testUrl
+// getProxyDelayWithUrl gets delay using testUrl from proxy info in a single request
+func getProxyDelayWithUrl(name string) int {
 	resp, err := apiRequest("GET", fmt.Sprintf("/proxies/%s", name), nil)
 	if err != nil || resp.StatusCode >= 400 {
 		return -1
