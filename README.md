@@ -1,4 +1,4 @@
-# ./mihomo-cli
+# mihomo-cli
 
 mihomo 命令行管理工具
 
