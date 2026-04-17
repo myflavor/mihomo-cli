@@ -45,12 +45,13 @@ func runDownload(cmd *cobra.Command, args []string) error {
 	downloadURL := ""
 
 	for _, asset := range release.Assets {
-		if goos == "linux" && goarch == "amd64" {
-			// Match patterns like "mihomo-linux-amd64-v1.19.23.gz" or "mihomo-linux-amd64-compatible-v1.19.23.gz"
-			if strings.Contains(asset.Name, "mihomo-linux-amd64") && strings.HasSuffix(asset.Name, ".gz") {
-				downloadURL = asset.BrowserDownloadURL
-				break
-			}
+		if !strings.HasSuffix(asset.Name, ".gz") {
+			continue
+		}
+		expectedPattern := fmt.Sprintf("mihomo-linux-%s", goarch)
+		if strings.Contains(asset.Name, expectedPattern) {
+			downloadURL = asset.BrowserDownloadURL
+			break
 		}
 	}
 
