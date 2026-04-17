@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -237,8 +238,16 @@ func getProxyDelayWithUrl(name string) int {
 		testUrl = tu
 	}
 
-	delayURL := fmt.Sprintf("/proxies/%s/delay?timeout=5000&url=%s", name, testUrl)
-	req, _ := http.NewRequest("GET", "http://"+getAPIAddr()+delayURL, nil)
+	u := url.URL{
+		Scheme: "http",
+		Host:   getAPIAddr(),
+		Path:   fmt.Sprintf("/proxies/%s/delay", name),
+	}
+	u.RawQuery = url.Values{
+		"timeout": {"5000"},
+		"url":     {testUrl},
+	}.Encode()
+	req, _ := http.NewRequest("GET", u.String(), nil)
 	if secret := getAPISecret(); secret != "" {
 		req.Header.Set("Authorization", "Bearer "+secret)
 	}
