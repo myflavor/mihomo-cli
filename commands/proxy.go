@@ -110,10 +110,27 @@ func runProxyList(cmd *cobra.Command, args []string) error {
 }
 
 func getProxyDelay(name string) int {
-	url := fmt.Sprintf("http://localhost:9090/proxies/%s/delay?timeout=5000&url=https://www.gstatic.com/generate_204", name)
-	req, _ := http.NewRequest("GET", url, nil)
+	// Get proxy info to check for custom testUrl
+	apiURL := fmt.Sprintf("http://localhost:9090/proxies/%s", name)
+	resp, err := http.Get(apiURL)
+	if err != nil {
+		return -1
+	}
+	defer resp.Body.Close()
+
+	data, _ := io.ReadAll(resp.Body)
+	var info map[string]interface{}
+	json.Unmarshal(data, &info)
+
+	testUrl := "https://www.gstatic.com/generate_204"
+	if tu, ok := info["testUrl"].(string); ok && tu != "" {
+		testUrl = tu
+	}
+
+	delayURL := fmt.Sprintf("http://localhost:9090/proxies/%s/delay?timeout=5000&url=%s", name, testUrl)
+	req, _ := http.NewRequest("GET", delayURL, nil)
 	client := &http.Client{Timeout: 6 * time.Second}
-	resp, err := client.Do(req)
+	resp, err = client.Do(req)
 	if err != nil {
 		return -1
 	}
@@ -123,9 +140,9 @@ func getProxyDelay(name string) int {
 		return -1
 	}
 
-	data, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 	var result map[string]interface{}
-	json.Unmarshal(data, &result)
+	json.Unmarshal(body, &result)
 
 	if delay, ok := result["delay"].(float64); ok {
 		return int(delay)
