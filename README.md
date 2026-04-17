@@ -1,4 +1,4 @@
-# mihomo-cli
+# ./mihomo-cli
 
 mihomo 命令行管理工具
 
@@ -23,29 +23,29 @@ mihomo 命令行管理工具
 下载最新 mihomo 二进制到 mihomo 目录
 
 ```bash
-mihomo-cli download
+./mihomo-cli download
 ```
 
 ### sub
 更新订阅，与 base.yml、override.yml 合并后写入 mihomo/config.yaml
 
 ```bash
-mihomo-cli sub
+./mihomo-cli sub
 ```
 
 ### start / stop
 后台启动或停止 mihomo
 
 ```bash
-mihomo-cli start
-mihomo-cli stop
+./mihomo-cli start
+./mihomo-cli stop
 ```
 
 ### proxy list
 查看所有代理组和节点延迟
 
 ```bash
-mihomo-cli proxy list
+./mihomo-cli proxy list
 ```
 
 ```
@@ -61,15 +61,15 @@ ProxyGroup (Selector)
 切换代理组选中的节点
 
 ```bash
-mihomo-cli proxy set ProxyGroup Node2
+./mihomo-cli proxy set ProxyGroup Node2
 ```
 
 ### service install / uninstall
 安装或卸载 systemd 服务
 
 ```bash
-sudo mihomo-cli service install
-sudo mihomo-cli service uninstall
+sudo ./mihomo-cli service install
+sudo ./mihomo-cli service uninstall
 ```
 
 服务以 root 身份运行，开启 TUN 模式。
