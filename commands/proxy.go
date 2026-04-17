@@ -49,37 +49,40 @@ type MihomoConfig struct {
 var (
 	configCache     *MihomoConfig
 	configCacheOnce sync.Once
+	configCacheErr  error
 )
 
 func getMihomoConfig() (*MihomoConfig, error) {
-	var err error
 	configCacheOnce.Do(func() {
 		mihomoDir := filepath.Join(getCliDir(), "mihomo")
 		configPath := filepath.Join(mihomoDir, "config.yaml")
 
 		data, readErr := os.ReadFile(configPath)
 		if readErr != nil {
-			err = fmt.Errorf("failed to read config: %w", readErr)
+			configCacheErr = fmt.Errorf("failed to read config: %w", readErr)
 			return
 		}
 
 		var cfg MihomoConfig
 		if parseErr := yaml.Unmarshal(data, &cfg); parseErr != nil {
-			err = fmt.Errorf("failed to parse config: %w", parseErr)
+			configCacheErr = fmt.Errorf("failed to parse config: %w", parseErr)
 			return
 		}
 
 		configCache = &cfg
 	})
-	return configCache, err
+	return configCache, configCacheErr
 }
 
 func getAPIAddr() string {
-	cfg, err := getMihomoConfig()
-	if err != nil || cfg.ExternalController == "" {
+	if configCache == nil {
 		return "127.0.0.1:9090"
 	}
-	addr := strings.ReplaceAll(cfg.ExternalController, "0.0.0.0", "127.0.0.1")
+	addr := configCache.ExternalController
+	if addr == "" {
+		return "127.0.0.1:9090"
+	}
+	addr = strings.ReplaceAll(addr, "0.0.0.0", "127.0.0.1")
 	return addr
 }
 
@@ -165,38 +168,6 @@ func runProxyList(cmd *cobra.Command, args []string) error {
 
 	sort.Slice(groups, func(i, j int) bool { return groups[i].name < groups[j].name })
 
-	// Concurrent delay check
-	type delayResult struct {
-		name  string
-		delay int
-	}
-	results := make(chan delayResult, 100)
-	var wg sync.WaitGroup
-
-	for _, g := range groups {
-		for _, item := range g.items {
-			if item == "DIRECT" || item == "REJECT" {
-				continue
-			}
-			wg.Add(1)
-			go func(name string) {
-				defer wg.Done()
-				delay := getProxyDelayWithUrl(name)
-				results <- delayResult{name, delay}
-			}(item)
-		}
-	}
-
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	delayMap := make(map[string]int)
-	for r := range results {
-		delayMap[r.name] = r.delay
-	}
-
 	// Print results
 	for _, g := range groups {
 		fmt.Printf("%s (%s)\n", g.name, g.ptype)
@@ -208,7 +179,7 @@ func runProxyList(cmd *cobra.Command, args []string) error {
 			if item == "DIRECT" || item == "REJECT" {
 				fmt.Printf("  - %s%s\n", item, mark)
 			} else {
-				delay := delayMap[item]
+				delay := getProxyDelay(item)
 				if delay > 0 {
 					fmt.Printf("  - %s (%dms)%s\n", item, delay, mark)
 				} else {
@@ -221,8 +192,8 @@ func runProxyList(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// getProxyDelayWithUrl gets delay using testUrl from proxy info in a single request
-func getProxyDelayWithUrl(name string) int {
+// getProxyDelay gets delay using testUrl from proxy info
+func getProxyDelay(name string) int {
 	resp, err := apiRequest("GET", fmt.Sprintf("/proxies/%s", name), nil)
 	if err != nil || resp.StatusCode >= 400 {
 		return -1
