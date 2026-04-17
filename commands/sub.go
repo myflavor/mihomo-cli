@@ -97,7 +97,9 @@ func runSub(cmd *cobra.Command, args []string) error {
 	fmt.Println("Config written to", configPath)
 
 	// Restart mihomo service if running
-	runSudoCmd("systemctl", "restart", "mihomo")
+	if err := runSudoCmd("systemctl", "restart", "mihomo"); err != nil {
+		// Silently ignore if service not installed
+	}
 
 	return nil
 }
