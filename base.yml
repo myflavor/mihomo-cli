@@ -2,7 +2,7 @@ external-controller: 127.0.0.1:9090
 tun:
   enable: true
   stack: system
-  device: mihomo-tun
+  device: mihomo
   auto-route: true
   auto-detect-interface: true
   dns-hijack:
