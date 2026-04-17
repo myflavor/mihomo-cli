@@ -1,0 +1,15 @@
+[Unit]
+Description=Mihomo Proxy
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart={{MIHOMO_BINARY}} -f {{CONFIG_FILE}}
+Restart=always
+RestartSec=5
+# TUN mode
+Environment="GODEBUG=netdns=go"
+
+[Install]
+WantedBy=multi-user.target

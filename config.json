@@ -1,0 +1,7 @@
+{
+  "subUrl": "https://example.com/sub",
+  "basePath": "base.yml",
+  "overridePath": "override.yml",
+  "mihomoPath": "./mihomo/mihomo",
+  "configPath": "./mihomo/config.yaml"
+}
