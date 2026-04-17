@@ -6,10 +6,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 var proxyListCmd = &cobra.Command{
@@ -35,8 +39,71 @@ func init() {
 	rootCmd.AddCommand(proxyCmd)
 }
 
+type MihomoConfig struct {
+	ExternalController string `yaml:"external-controller"`
+	Secret             string `yaml:"secret"`
+}
+
+func getMihomoConfig() (*MihomoConfig, error) {
+	mihomoDir := filepath.Join(getCliDir(), "mihomo")
+	configPath := filepath.Join(mihomoDir, "config.yaml")
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config: %w", err)
+	}
+
+	var cfg MihomoConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	return &cfg, nil
+}
+
+func getAPIAddr() string {
+	cfg, err := getMihomoConfig()
+	if err != nil {
+		return "127.0.0.1:9090"
+	}
+
+	addr := cfg.ExternalController
+	if addr == "" {
+		return "127.0.0.1:9090"
+	}
+
+	// Replace 0.0.0.0 with 127.0.0.1
+	addr = strings.ReplaceAll(addr, "0.0.0.0", "127.0.0.1")
+	return addr
+}
+
+func getAPISecret() string {
+	cfg, err := getMihomoConfig()
+	if err != nil || cfg.Secret == "" {
+		return ""
+	}
+	return cfg.Secret
+}
+
+func apiRequest(method, path string, body interface{}) (*http.Response, error) {
+	url := fmt.Sprintf("http://%s%s", getAPIAddr(), path)
+
+	var bodyReader io.Reader
+	if body != nil {
+		data, _ := json.Marshal(body)
+		bodyReader = bytes.NewBuffer(data)
+	}
+	req, _ := http.NewRequest(method, url, bodyReader)
+	req.Header.Set("Content-Type", "application/json")
+	if secret := getAPISecret(); secret != "" {
+		req.Header.Set("Authorization", "Bearer "+secret)
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	return client.Do(req)
+}
+
 func runProxyList(cmd *cobra.Command, args []string) error {
-	resp, err := http.Get("http://localhost:9090/proxies")
+	resp, err := apiRequest("GET", "/proxies", nil)
 	if err != nil {
 		return fmt.Errorf("API request failed: %w", err)
 	}
@@ -45,6 +112,10 @@ func runProxyList(cmd *cobra.Command, args []string) error {
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(data))
 	}
 
 	var result map[string]interface{}
@@ -111,9 +182,8 @@ func runProxyList(cmd *cobra.Command, args []string) error {
 
 func getProxyDelay(name string) int {
 	// Get proxy info to check for custom testUrl
-	apiURL := fmt.Sprintf("http://localhost:9090/proxies/%s", name)
-	resp, err := http.Get(apiURL)
-	if err != nil {
+	resp, err := apiRequest("GET", fmt.Sprintf("/proxies/%s", name), nil)
+	if err != nil || resp.StatusCode >= 400 {
 		return -1
 	}
 	defer resp.Body.Close()
@@ -127,8 +197,11 @@ func getProxyDelay(name string) int {
 		testUrl = tu
 	}
 
-	delayURL := fmt.Sprintf("http://localhost:9090/proxies/%s/delay?timeout=5000&url=%s", name, testUrl)
-	req, _ := http.NewRequest("GET", delayURL, nil)
+	delayURL := fmt.Sprintf("/proxies/%s/delay?timeout=5000&url=%s", name, testUrl)
+	req, _ := http.NewRequest("GET", "http://"+getAPIAddr()+delayURL, nil)
+	if secret := getAPISecret(); secret != "" {
+		req.Header.Set("Authorization", "Bearer "+secret)
+	}
 	client := &http.Client{Timeout: 6 * time.Second}
 	resp, err = client.Do(req)
 	if err != nil {
@@ -158,22 +231,15 @@ func runProxySet(cmd *cobra.Command, args []string) error {
 	groupName := args[0]
 	proxyName := args[1]
 
-	body := map[string]interface{}{"name": proxyName}
-	jsonData, _ := json.Marshal(body)
-
-	url := fmt.Sprintf("http://localhost:9090/proxies/%s", groupName)
-	req, _ := http.NewRequest("PUT", url, bytes.NewBuffer(jsonData))
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := apiRequest("PUT", fmt.Sprintf("/proxies/%s", groupName), map[string]interface{}{"name": proxyName})
 	if err != nil {
 		return fmt.Errorf("API request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("API returned status %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	fmt.Printf("Set %s to %s\n", groupName, proxyName)
