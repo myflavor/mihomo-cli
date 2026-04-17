@@ -48,10 +48,12 @@ func runServiceInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	cliDir := getCliDir()
-	mihomoBinary := filepath.Join(cliDir, "mihomo", "mihomo")
-	configFile := filepath.Join(cliDir, "mihomo", "config.yaml")
+	mihomoDir := filepath.Join(cliDir, "mihomo")
+	mihomoBinary := filepath.Join(mihomoDir, "mihomo")
+	configFile := filepath.Join(mihomoDir, "config.yaml")
 
 	content := strings.ReplaceAll(string(templateData), "{{CLI_DIR}}", cliDir)
+	content = strings.ReplaceAll(content, "{{MIHOMO_DIR}}", mihomoDir)
 	content = strings.ReplaceAll(content, "{{MIHOMO_BINARY}}", mihomoBinary)
 	content = strings.ReplaceAll(content, "{{CONFIG_FILE}}", configFile)
 

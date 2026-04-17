@@ -18,27 +18,13 @@ var startCmd = &cobra.Command{
 }
 
 func runStart(cmd *cobra.Command, args []string) error {
-	cfg, err := loadConfig()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-
-	mihomoPath := filepath.Join(getCliDir(), cfg.MihomoPath)
-	if cfg.MihomoPath == "" {
-		mihomoPath = filepath.Join(getCliDir(), "mihomo", "mihomo")
-	}
+	cliDir := getCliDir()
+	mihomoDir := filepath.Join(cliDir, "mihomo")
+	mihomoPath := filepath.Join(mihomoDir, "mihomo")
+	configPath := filepath.Join(mihomoDir, "config.yaml")
 
 	if !fileExists(mihomoPath) {
 		return fmt.Errorf("mihomo binary not found at %s, run 'mihomo-cli download' first", mihomoPath)
-	}
-
-	configPath := filepath.Join(getCliDir(), cfg.ConfigPath)
-	if cfg.ConfigPath == "" {
-		configPath = filepath.Join(getCliDir(), "mihomo", "config.yaml")
-	}
-
-	if !fileExists(configPath) {
-		return fmt.Errorf("config file not found at %s, run 'mihomo-cli sub' first", configPath)
 	}
 
 	pidPath := filepath.Join(getCliDir(), ".mihomo.pid")
@@ -59,7 +45,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open log file: %w", err)
 	}
-	mihomoCmd := exec.Command(mihomoPath, "-f", configPath)
+	mihomoCmd := exec.Command(mihomoPath, "-d", mihomoDir, "-f", configPath)
 	mihomoCmd.Stdout = logFile
 	mihomoCmd.Stderr = logFile
 	if err := mihomoCmd.Start(); err != nil {

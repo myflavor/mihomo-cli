@@ -49,7 +49,7 @@ func runSub(cmd *cobra.Command, args []string) error {
 	cliDir := getCliDir()
 	basePath := filepath.Join(cliDir, cfg.BasePath)
 	overridePath := filepath.Join(cliDir, cfg.OverridePath)
-	configPath := filepath.Join(cliDir, cfg.ConfigPath)
+	configPath := filepath.Join(cliDir, "config.yaml")
 
 	// If base exists, merge first (base -> subscription)
 	if cfg.BasePath != "" && fileExists(basePath) {
@@ -137,9 +137,7 @@ func fileExists(path string) bool {
 }
 
 type Config struct {
-	SubURL     string `json:"subUrl"`
-	BasePath   string `json:"basePath"`
+	SubURL       string `json:"subUrl"`
+	BasePath     string `json:"basePath"`
 	OverridePath string `json:"overridePath"`
-	MihomoPath string `json:"mihomoPath"`
-	ConfigPath string `json:"configPath"`
 }
