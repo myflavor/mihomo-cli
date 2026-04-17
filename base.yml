@@ -1,4 +1,3 @@
-external-ui: ui
 external-controller: 0.0.0.0:9090
 tun:
   enable: true
