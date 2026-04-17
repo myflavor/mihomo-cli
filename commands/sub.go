@@ -47,9 +47,10 @@ func runSub(cmd *cobra.Command, args []string) error {
 	}
 
 	cliDir := getCliDir()
+	mihomoDir := filepath.Join(cliDir, "mihomo")
 	basePath := filepath.Join(cliDir, cfg.BasePath)
 	overridePath := filepath.Join(cliDir, cfg.OverridePath)
-	configPath := filepath.Join(cliDir, "config.yaml")
+	configPath := filepath.Join(mihomoDir, "config.yaml")
 
 	// If base exists, merge first (base -> subscription)
 	if cfg.BasePath != "" && fileExists(basePath) {
@@ -94,6 +95,10 @@ func runSub(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println("Config written to", configPath)
+
+	// Restart mihomo service if running
+	runSudoCmd("systemctl", "restart", "mihomo")
+
 	return nil
 }
 
