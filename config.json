@@ -1,6 +1,5 @@
 {
   "subUrl": "https://example.com/sub",
   "basePath": "base.yml",
-  "overridePath": "override.yml",
-  "mihomoDir": "./mihomo"
+  "overridePath": "override.yml"
 }
